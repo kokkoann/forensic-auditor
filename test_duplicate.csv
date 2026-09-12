@@ -1,0 +1,5 @@
+fecha,cuenta,concepto,rfc,cargo,abono,saldo
+2026-09-01,5000,Compra proveedor,BBB010101BBB,20000,0,20000
+2026-09-01,5000,Compra proveedor,BBB010101BBB,20000,0,40000
+2026-09-02,5000,Compra proveedor,CCC010101CCC,18000,0,58000
+2026-09-03,5000,Compra proveedor,DDD010101DDD,22000,0,80000

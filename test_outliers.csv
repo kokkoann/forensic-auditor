@@ -1,0 +1,5 @@
+fecha,cuenta,concepto,rfc,cargo,abono,saldo
+2026-09-01,5000,Compra normal,BBB010101BBB,10000,0,10000
+2026-09-02,5000,Compra normal,CCC010101CCC,12000,0,22000
+2026-09-03,5000,Compra normal,DDD010101DDD,11000,0,33000
+2026-09-04,5000,Compra extraordinaria,EEE010101EEE,300000,0,333000
