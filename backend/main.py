@@ -1,3 +1,6 @@
+import uuid
+from pydantic import BaseModel
+
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,6 +9,8 @@ from agent.document_classifier import classify_document
 from agent.router import route_document
 from agent.ai_analyst import analyze_with_gemini
 
+from agent.case_store import save_case, get_case
+from agent.case_qa import ask_case_agent
 
 app = FastAPI(
     title="Forensic Auditor API",
@@ -60,9 +65,24 @@ async def analyze_document(file: UploadFile = File(...)):
             analysis=analysis
         )
 
+        case_id = str(uuid.uuid4())
+
+        case_data = {
+            "filename": file.filename,
+            "classification": classification,
+            "analysis": analysis,
+            "ai_report": ai_report
+        }
+
+        save_case(
+            case_id,
+            case_data
+    )
+
         # 6. Respuesta final
         return {
             "status": "success",
+            "case_id": case_id,
             "filename": file.filename,
             "classification": classification,
             "analysis": analysis,
@@ -70,6 +90,43 @@ async def analyze_document(file: UploadFile = File(...)):
         }
 
     except Exception as exc:
+        return {
+            "status": "error",
+            "message": str(exc)
+        }
+    
+class QuestionRequest(BaseModel):
+    question: str
+
+@app.post("/cases/{case_id}/ask")
+def ask_case(
+    case_id: str,
+    request: QuestionRequest
+):
+
+    case_data = get_case(case_id)
+
+    if not case_data:
+        return {
+            "status": "error",
+            "message": "Caso no encontrado"
+        }
+
+    try:
+
+        response = ask_case_agent(
+            case_data=case_data,
+            question=request.question
+        )
+
+        return {
+            "status": "success",
+            "case_id": case_id,
+            "response": response
+        }
+
+    except Exception as exc:
+
         return {
             "status": "error",
             "message": str(exc)
