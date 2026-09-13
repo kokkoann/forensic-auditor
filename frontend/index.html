@@ -1,3 +1,8 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ledgerhound</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -301,6 +306,8 @@
   }
 
 </style>
+</head>
+<body>
 
 <div class="scrim" id="scrim"></div>
 
@@ -706,7 +713,7 @@
 
   function loadState(){
     try{
-      var raw = localStorage.getItem("rastro69b_state_v1");
+      var raw = localStorage.getItem("rastro69b_state_v2_backend");
       if(raw){
         var parsed = JSON.parse(raw);
         if(parsed && parsed.cases && parsed.cases.length) return parsed;
@@ -715,7 +722,7 @@
     return null;
   }
   function saveState(){
-    try{ localStorage.setItem("rastro69b_state_v1", JSON.stringify({cases:cases})); }catch(e){}
+    try{ localStorage.setItem("rastro69b_state_v2_backend", JSON.stringify({cases:cases})); }catch(e){}
   }
 
   var saved = loadState();
@@ -998,3 +1005,5 @@
   renderTable();
 })();
 </script>
+</body>
+</html>
