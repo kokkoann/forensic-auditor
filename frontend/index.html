@@ -1,3 +1,8 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ledgerhound</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -301,6 +306,8 @@
   }
 
 </style>
+</head>
+<body>
 
 <div class="scrim" id="scrim"></div>
 
@@ -443,6 +450,12 @@
 (function(){
   "use strict";
 
+  // ============================================================
+  // CONEXIÓN CON EL BACKEND (Forensic Auditor API - FastAPI)
+  // Cambia este valor si tu backend corre en otro host/puerto.
+  // ============================================================
+  var API_BASE = "http://127.0.0.1:8000";
+
   var STEP_DEFS = [
     {label:"Carga"},
     {label:"Parseo"},
@@ -481,6 +494,99 @@
     return l3+yy+mm+dd+homo;
   }
   function genNombre(){ return rand(FORMA)+" "+rand(SECTOR)+" "+rand(NOMBRE2)+rand(SUFIJO); }
+
+  // ============================================================
+  // ADAPTADOR: respuesta real del backend -> formato de caso del UI
+  // ============================================================
+  var NIVEL_FROM_LEVEL = {HIGH:"high", MEDIUM:"medium", LOW:"low"};
+  var SEVERITY_SCORE = {HIGH:40, MEDIUM:20, LOW:5, UNKNOWN:0, NONE:0};
+
+  function findingLabel(f){
+    if(f.type === "SAT_69B"){
+      return "RFC " + f.rfc + " en listado 69-B — situación \"" + f.status + "\"";
+    }
+    if(f.type === "DUPLICATE_TRANSACTION"){
+      return "Movimiento duplicado (fila " + f.current_row + " vs fila " + f.original_row + ") — RFC " + f.rfc;
+    }
+    if(f.type === "UNUSUALLY_LARGE_AMOUNT"){
+      return "Monto atípico en fila " + f.row + " — RFC " + f.rfc + " (umbral: " + money(f.threshold) + ")";
+    }
+    return f.message || f.type;
+  }
+
+  function findingEvidence(f){
+    if(f.type === "SAT_69B"){
+      return "RFC " + f.rfc + " localizado en el listado del Art. 69-B con situación \"" + f.status + "\"" + (f.taxpayer_name ? " (" + f.taxpayer_name + ")" : "") + ".";
+    }
+    if(f.type === "DUPLICATE_TRANSACTION"){
+      return "Mismo folio/monto detectado en las filas " + f.original_row + " y " + f.current_row + " (fecha " + f.fecha + ", cargo " + money(f.cargo) + ", abono " + money(f.abono) + ").";
+    }
+    if(f.type === "UNUSUALLY_LARGE_AMOUNT"){
+      return "Monto de " + money(f.amount) + " en la fila " + f.row + ", muy por encima del umbral estadístico de " + money(f.threshold) + ".";
+    }
+    return f.message || JSON.stringify(f);
+  }
+
+  // Convierte la respuesta de POST /analyze-document en un objeto "caso"
+  // compatible con renderTable()/openDetail(). No modifica el backend:
+  // solo interpreta lo que ya regresa.
+  function mapBackendCaseToUI(payload){
+    var analysis = payload.analysis || {};
+    var risk = analysis.risk || null;
+    var findings = analysis.findings || [];
+    var rfcs = analysis.rfcs_analyzed || [];
+    var aiReport = payload.ai_report || null;
+
+    var score = risk ? risk.score : 0;
+    var nivel = risk ? (NIVEL_FROM_LEVEL[risk.level] || "low") : "low";
+
+    // Tipo de detección dominante, a partir de los findings reales
+    var tipo = "MONTO", situacion = "N/A";
+    var satFinding = findings.filter(function(f){ return f.type === "SAT_69B"; })[0];
+    if(satFinding){
+      tipo = "69B";
+      situacion = satFinding.status || "N/A";
+    } else if(findings.some(function(f){ return f.type === "DUPLICATE_TRANSACTION"; })){
+      tipo = "DUP";
+    }
+
+    var rfc = rfcs.length ? (rfcs[0] + (rfcs.length > 1 ? " (+" + (rfcs.length - 1) + " más)" : "")) : "—";
+
+    var breakdown = findings.map(function(f){
+      return { l: findingLabel(f), v: SEVERITY_SCORE[f.severity] || 0 };
+    });
+
+    // Preferimos los hallazgos clave que ya redactó el agente (Gemini);
+    // si no vinieron (fallback), armamos la evidencia desde los findings crudos.
+    var evidencia = (aiReport && aiReport.key_findings && aiReport.key_findings.length)
+      ? aiReport.key_findings
+      : findings.map(findingEvidence);
+    if(!evidencia.length){
+      evidencia = ["El backend no reportó hallazgos de riesgo para este documento (analizador: " + (analysis.analyzer || "desconocido") + ")."];
+    }
+
+    var monto = findings.reduce(function(sum, f){ return sum + (typeof f.amount === "number" ? f.amount : 0); }, 0);
+
+    var today = new Date();
+    var fecha = today.getFullYear()+"-"+pad(today.getMonth()+1,2)+"-"+pad(today.getDate(),2);
+
+    return {
+      id: payload.case_id,
+      rfc: rfc,
+      nombre: aiReport && aiReport.executive_summary ? payload.filename : (payload.filename || "Documento sin nombre"),
+      tipo: tipo,
+      situacion: situacion,
+      nivel: nivel,
+      score: score,
+      monto: monto,
+      fecha: fecha,
+      breakdown: breakdown,
+      evidencia: evidencia,
+      origen: payload.filename,
+      _classification: payload.classification,
+      _aiReport: aiReport
+    };
+  }
 
   function computeCase(fileName){
     var tipoRoll = Math.random();
@@ -607,7 +713,7 @@
 
   function loadState(){
     try{
-      var raw = localStorage.getItem("rastro69b_state_v1");
+      var raw = localStorage.getItem("rastro69b_state_v2_backend");
       if(raw){
         var parsed = JSON.parse(raw);
         if(parsed && parsed.cases && parsed.cases.length) return parsed;
@@ -616,7 +722,7 @@
     return null;
   }
   function saveState(){
-    try{ localStorage.setItem("rastro69b_state_v1", JSON.stringify({cases:cases})); }catch(e){}
+    try{ localStorage.setItem("rastro69b_state_v2_backend", JSON.stringify({cases:cases})); }catch(e){}
   }
 
   var saved = loadState();
@@ -742,30 +848,17 @@
     wrap.scrollTop = wrap.scrollHeight;
   }
 
-  function answerQuestion(c, q){
-    var ql = q.toLowerCase();
-    if(/monto|cantidad|cu[aá]nto/.test(ql)){
-      return "El monto involucrado en este expediente es de " + money(c.monto) + " MXN." + (c.tipo==="MONTO" ? " Este valor se aleja de forma significativa del comportamiento histórico del proveedor, lo cual disparó el detector de monto anómalo." : "");
-    }
-    if(/riesgo|score|probabilidad|porcentaje/.test(ql)){
-      return "El Risk Score de este expediente es " + c.score + "%, calculado a partir de: " + c.breakdown.map(function(b){ return b.l + " (" + (b.v>0?"+":"") + b.v + ")"; }).join(", ") + ".";
-    }
-    if(/evidencia|prueba|por ?qu[eé]|raz[oó]n/.test(ql)){
-      return "La evidencia registrada para este expediente es: " + c.evidencia.join(" · ");
-    }
-    if(/rfc|contribuyente|empresa|proveedor|qui[eé]n/.test(ql)){
-      return "El expediente corresponde al RFC " + c.rfc + " (" + c.nombre + ").";
-    }
-    if(/fecha|cu[aá]ndo/.test(ql)){
-      return "El análisis de este expediente se generó el " + c.fecha + ".";
-    }
-    if(c.tipo==="69B" && /situaci|estatus|69-?b|sat/.test(ql)){
-      return "Ante el SAT, este contribuyente figura con situación \"" + c.situacion + "\" en el listado del Artículo 69-B.";
-    }
-    if(/fraude|culpable|seguro|confirmad/.test(ql)){
-      return "No puedo afirmar fraude probado. Este expediente señala un indicador de riesgo (" + NIVEL_LABEL[c.nivel] + ") que debe verificarse por un analista antes de tomar acción.";
-    }
-    return "La evidencia disponible no es suficiente para responder esa pregunta con precisión. Puedo hablarte del monto, la evidencia registrada, el cálculo del Risk Score o el estatus ante el SAT de este expediente.";
+  // Llama a POST /cases/{case_id}/ask en el backend real.
+  // Si el caso es de ejemplo (INITIAL_CASES) o el backend se reinició
+  // y perdió el caso en memoria, el backend responde "Caso no encontrado"
+  // y lo mostramos tal cual en el chat.
+  async function askBackend(caseId, question){
+    var res = await fetch(API_BASE + "/cases/" + encodeURIComponent(caseId) + "/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: question })
+    });
+    return res.json();
   }
 
   document.getElementById("chatForm").addEventListener("submit", function(e){
@@ -784,9 +877,17 @@
     hist.push({role:"agent", text:"Escribiendo…", typing:true});
     renderChat(selectedId);
 
-    delay(500 + randInt(200,500)).then(function(){
+    askBackend(selectedId, q).then(function(payload){
+      hist.pop(); // quita "Escribiendo…"
+      if(payload && payload.status === "success"){
+        hist.push({role:"agent", text: payload.response.answer});
+      } else {
+        hist.push({role:"agent", text: "El backend no pudo responder: " + (payload && payload.message ? payload.message : "error desconocido") + ". (Si este expediente es de un ejemplo o el backend se reinició, súbelo de nuevo para generar un case_id válido.)"});
+      }
+    }).catch(function(){
       hist.pop();
-      hist.push({role:"agent", text: answerQuestion(c, q)});
+      hist.push({role:"agent", text: "No se pudo conectar con el backend en " + API_BASE + ". Verifica que esté corriendo."});
+    }).finally(function(){
       renderChat(selectedId);
       input.disabled = false;
       document.getElementById("chatSend").disabled = false;
@@ -806,28 +907,67 @@
     }
   }
 
-  async function runPipeline(fileName){
+  // Avanza visualmente un paso del pipeline con su texto de detalle
+  function markStep(stepEls, index, text, active){
+    var el = stepEls[index];
+    if(!el) return;
+    if(active){
+      el.classList.add("active");
+    } else {
+      el.classList.remove("active");
+      el.classList.add("done");
+      if(text) el.querySelector(".step-detail").textContent = text;
+    }
+  }
+
+  async function runPipeline(file){
     var pipeline = document.getElementById("pipeline");
     var stepsEl = document.getElementById("steps");
-    document.getElementById("pipelineFile").textContent = fileName;
+    document.getElementById("pipelineFile").textContent = file.name;
     pipeline.classList.remove("idle");
-
-    var result = computeCase(fileName);
 
     stepsEl.innerHTML = STEP_DEFS.map(function(s,i){
       return '<div class="step" data-i="'+i+'"><div class="step-dot mono">'+(i+1)+'</div><div class="step-label">'+s.label+'</div><div class="step-detail"></div></div>';
     }).join("");
     var stepEls = stepsEl.querySelectorAll(".step");
 
-    for(var i=0;i<STEP_DEFS.length;i++){
-      stepEls[i].classList.add("active");
-      await delay(420 + randInt(0,260));
-      stepEls[i].querySelector(".step-detail").textContent = stepDetailText(i, fileName, result);
-      stepEls[i].classList.remove("active");
-      stepEls[i].classList.add("done");
-      await delay(120);
+    // Paso 1: documento recibido (esto sí pasa localmente, en el navegador)
+    markStep(stepEls, 0, null, true);
+    await delay(200);
+    markStep(stepEls, 0, "Documento recibido: " + file.name, false);
+
+    // Pasos 2-5: los realiza el backend real en una sola llamada.
+    // Los vamos marcando conforme llega la respuesta, no son inventados.
+    markStep(stepEls, 1, null, true);
+
+    var formData = new FormData();
+    formData.append("file", file);
+
+    var payload;
+    try {
+      var res = await fetch(API_BASE + "/analyze-document", {
+        method: "POST",
+        body: formData
+      });
+      payload = await res.json();
+    } catch (err) {
+      markStep(stepEls, 1, "Error de conexión: no se pudo contactar al backend en " + API_BASE, false);
+      setTimeout(function(){ pipeline.classList.add("idle"); }, 3000);
+      return;
     }
 
+    if(!payload || payload.status !== "success"){
+      markStep(stepEls, 1, "El backend respondió con un error: " + (payload && payload.message ? payload.message : "desconocido"), false);
+      setTimeout(function(){ pipeline.classList.add("idle"); }, 3000);
+      return;
+    }
+
+    markStep(stepEls, 1, "Documento parseado por el backend.", false);
+    markStep(stepEls, 2, "Tipo detectado: " + payload.classification.document_type + " (" + Math.round(payload.classification.confidence*100) + "% confianza).", false);
+    markStep(stepEls, 3, (payload.analysis && payload.analysis.analyzer ? payload.analysis.analyzer : "Analizador") + " ejecutado sobre el documento.", false);
+    markStep(stepEls, 4, "Expediente " + payload.case_id + " listo.", false);
+
+    var result = mapBackendCaseToUI(payload);
     result._isNew = true;
     cases.unshift(result);
     saveState();
@@ -846,7 +986,7 @@
   });
   document.getElementById("fileInput").addEventListener("change", function(e){
     var f = e.target.files && e.target.files[0];
-    if(f) runPipeline(f.name);
+    if(f) runPipeline(f);
     e.target.value = "";
   });
 
@@ -865,3 +1005,5 @@
   renderTable();
 })();
 </script>
+</body>
+</html>
