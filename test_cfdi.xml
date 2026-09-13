@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<cfdi:Comprobante
+    xmlns:cfdi="http://www.sat.gob.mx/cfd/4"
+    xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
+    Version="4.0"
+    Fecha="2026-09-12T10:30:00"
+    SubTotal="10000.00"
+    Moneda="MXN"
+    Total="11600.00"
+    TipoDeComprobante="I"
+    Exportacion="01"
+    LugarExpedicion="64000"
+    NoCertificado="00001000000500000000"
+    Certificado="TEST"
+    Sello="TEST">
+
+    <cfdi:Emisor
+        Rfc="AAA120730823"
+        Nombre="EMPRESA DE PRUEBA"
+        RegimenFiscal="601"
+    />
+
+    <cfdi:Receptor
+        Rfc="BBB010101BBB"
+        Nombre="CLIENTE DE PRUEBA"
+        DomicilioFiscalReceptor="64000"
+        RegimenFiscalReceptor="601"
+        UsoCFDI="G03"
+    />
+
+    <cfdi:Conceptos>
+
+        <cfdi:Concepto
+            ClaveProdServ="80101500"
+            Cantidad="1"
+            ClaveUnidad="E48"
+            Descripcion="SERVICIO DE PRUEBA"
+            ValorUnitario="10000.00"
+            Importe="10000.00"
+            ObjetoImp="02"
+        />
+
+    </cfdi:Conceptos>
+
+    <cfdi:Complemento>
+
+        <tfd:TimbreFiscalDigital
+            Version="1.1"
+            UUID="12345678-1234-1234-1234-123456789ABC"
+            FechaTimbrado="2026-09-12T10:31:00"
+            RfcProvCertif="AAA010101AAA"
+            SelloCFD="TEST"
+            NoCertificadoSAT="00001000000500000001"
+            SelloSAT="TEST"
+        />
+
+    </cfdi:Complemento>
+
+</cfdi:Comprobante>
