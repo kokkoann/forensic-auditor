@@ -1,0 +1,21 @@
+# LedgerHound / Forensic Auditor backend dependencies
+
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+python-dotenv
+
+# Data processing
+pandas
+openpyxl
+
+# Document parsers
+PyMuPDF
+lxml
+
+# AI
+google-genai
+
+# Money trail / graph utilities
+networkx
