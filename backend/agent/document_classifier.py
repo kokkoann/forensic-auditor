@@ -1,3 +1,8 @@
+from normalizers.transaction_normalizer import (
+    is_transaction_document
+)
+
+
 def normalize_columns(columns):
     """
     Convierte los nombres de columnas a minúsculas
@@ -19,11 +24,19 @@ def classify_document(document: dict) -> dict:
 
     if file_format in {"CSV", "EXCEL"}:
 
-        columns = normalize_columns(
-            document.get("columns", [])
+        original_columns = document.get(
+            "columns",
+            []
         )
 
-        # Indicadores de libro contable
+        columns = normalize_columns(
+            original_columns
+        )
+
+        # --------------------------------------
+        # 1. Detectar libro contable
+        # --------------------------------------
+
         ledger_keywords = {
             "cuenta",
             "concepto",
@@ -32,29 +45,10 @@ def classify_document(document: dict) -> dict:
             "saldo"
         }
 
-        # Indicadores de transacciones
-        transaction_keywords = {
-            "origen",
-            "destino",
-            "monto"
-        }
-
-        transaction_keywords_english = {
-            "origin",
-            "destination",
-            "amount"
-        }
-
         ledger_matches = len(
             columns & ledger_keywords
         )
 
-        transaction_matches = max(
-            len(columns & transaction_keywords),
-            len(columns & transaction_keywords_english)
-        )
-
-        # Libro contable
         if ledger_matches >= 3:
             return {
                 "document_type": "ACCOUNTING_LEDGER",
@@ -65,15 +59,27 @@ def classify_document(document: dict) -> dict:
                 )
             }
 
-        # Transacciones
-        if transaction_matches >= 3:
+        # --------------------------------------
+        # 2. Detectar archivo de transacciones
+        #    usando el normalizador
+        # --------------------------------------
+
+        is_transaction, transaction_mapping = (
+            is_transaction_document(
+                original_columns
+            )
+        )
+
+        if is_transaction:
             return {
                 "document_type": "BANK_TRANSACTIONS",
                 "confidence": 0.90,
                 "reason": (
-                    "Se encontraron columnas compatibles "
+                    "Se identificaron columnas compatibles "
                     "con movimientos financieros."
-                )
+                ),
+                "column_mapping":
+                    transaction_mapping
             }
 
     # ==========================================
